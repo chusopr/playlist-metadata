@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+
+import fileinput, os.path, re, hashlib, argparse, sys
+from subprocess import Popen, PIPE
+
+# Function to calculate MD5 hash of a file
+# It reads file by chunks so it doesn't clog system memory
+# It also prints a progress percentage if script was called with -v option
+
+def get_md5(filename):
+  md5 = hashlib.md5()
+  f = open(filename, "rb")
+  if args.v:
+    bytesread = 0
+    # Store cursor position
+    print("\x1b[s", end="")
+  while True:
+    chunk = f.read(65536)
+    if chunk == b'':
+      break
+    md5.update(chunk)
+    if args.v:
+      bytesread += 65536
+      # Print current percentage restoring cursor position to override
+      # previous percentage
+      print("\x1b[u" + str(bytesread*100//size if bytesread <= size else 100) + " %", end="")
+  del chunk
+  f.close()
+  if args.v:
+    # Restore cursor position so result overrides percentage
+    # And move cursor one position left to override trailing space
+    print("\x1b[u\x1b[1D", end="")
+  return md5.hexdigest()
+
+# Parse command line options
+
+parser = argparse.ArgumentParser(description='Checks a playlist build with genplaylist.sh.\n\nThis script only verifies a playlist. Playlist generation is not yet implemented in this script. Use genplaylist.sh instead.')
+parser.add_argument('files', type=argparse.FileType('r'),
+                    default=sys.stdin, help='List of files to generate a playlist for.', nargs='?')
+parser.add_argument('-v', action='store_true', help='Show progress')
+parser.add_argument('-c', action='store_true', help='Check playlist file specified in <file> parameter or use standard input otherwise.')
+args = parser.parse_args()
+
+if not args.c:
+  sys.stderr.write("Currently, only check mode is supported.\nUse --help to get help or see https://github.com/chusopr/playlist-metadata/blob/master/README.md for documentation.\n")
+  exit()
+
+# Iterate over playlist lines
+
+md5 = size = None
+for line in args.files:
+  # If line starts with '#', it contains next file data
+  if re.match("#", line):
+    # Seccond and third column contain MD5 and size, respectively
+    # First column marks line as a comment (#) and forth one contains
+    # file magic, we are not interested in these two columns
+    _, md5, size, _ = line.split(" ", 3)
+    size = int(size)
+  # Otherwise, it contains file name
+  else:
+    filename = line.rstrip("\n\r")
+    # Start verifying file
+    print(filename + ": ", end="")
+    filename = os.path.abspath(filename)
+    if not os.path.isfile(filename):
+      print("File not found")
+    elif md5 is None or size is None:
+      print("File has no checksum")
+    elif size != os.path.getsize(filename):
+      print("Size differs")
+    elif md5.lower() != get_md5(filename).lower():
+      print("Sum differs")
+    else:
+      # Since this print overrides a previous and larger one, we need
+      # to include ANSI code to clear line
+      print("OK\x1b[0J")
+    md5 = size = None

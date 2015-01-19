@@ -1,0 +1,5 @@
+* Move playlist generation from bash script to Python.
+
+* Allow -q flag when verify so it only returns verification status.
+
+* -v/-q flags when generating playlist.
